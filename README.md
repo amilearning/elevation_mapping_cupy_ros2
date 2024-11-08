@@ -1,4 +1,18 @@
-# Elevation Mapping cupy
+## ROS2 Elevation Mapping Cupy
+> **Status**: Under Development 🚧
+
+### Features
+- **Point cloud-based map update**: *Functional*
+- **Image-based map update**: *Ongoing development*
+
+### Dependencies
+- **ROS 2 Humble**
+- **CUDA 12.4**
+- **PyTorch 2.4.0**
+  
+
+![Elevation Map in ROS 2 Humble with Gazebo ](https://github.com/user-attachments/assets/0dd9ebbe-a90d-486f-9871-81921308fab9)
+
 
 ![python tests](https://github.com/leggedrobotics/elevation_mapping_cupy/actions/workflows/python-tests.yml/badge.svg)
 
