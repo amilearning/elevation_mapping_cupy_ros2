@@ -14,7 +14,7 @@
 
 // Pybind
 #include <pybind11/embed.h>  // everything needed for embedding
-
+#include <rclcpp/qos.hpp>
 // ROS
 #include <geometry_msgs/msg/polygon_stamped.hpp>
 #include <image_transport/image_transport.hpp>
@@ -96,11 +96,16 @@ class ElevationMappingNode : public rclcpp::Node {
   using PointCloudSyncPtr = std::shared_ptr<PointCloudSync>;
 
  private:
-  void readParameters();
-  void setupMapPublishers();
-  void pointcloudCallback(const sensor_msgs::msg::PointCloud2::SharedPtr cloud, const std::string& key);    
-  void inputPointCloud(const sensor_msgs::msg::PointCloud2::SharedPtr cloud, const std::vector<std::string>& channels);
-//   void inputImage(const sensor_msgs::ImageConstPtr& image_msg, const sensor_msgs::CameraInfoConstPtr& camera_info_msg, const std::vector<std::string>& channels);
+void readParameters();
+void setupMapPublishers();
+void pointcloudCallback(const sensor_msgs::msg::PointCloud2::SharedPtr cloud, const std::string& key);    
+void inputPointCloud(const sensor_msgs::msg::PointCloud2::SharedPtr cloud, const std::vector<std::string>& channels);
+  
+void inputImage(const sensor_msgs::msg::Image::ConstSharedPtr& image_msg,
+                  const sensor_msgs::msg::CameraInfo::ConstSharedPtr& camera_info_msg,
+                  const std::vector<std::string>& channels);
+
+
 // void imageCallback(const sensor_msgs::msg::Image::SharedPtr image_msg, const sensor_msgs::msg::CameraInfo::SharedPtr camera_info_msg, const std::string& key);
 // void imageChannelCallback(const sensor_msgs::msg::Image::SharedPtr image_msg, const sensor_msgs::msg::CameraInfo::SharedPtr camera_info_msg, const elevation_map_msgs::msg::ChannelInfo::SharedPtr channel_info_msg);
 void imageCallback(const std::shared_ptr<const sensor_msgs::msg::Image>& image_msg, const std::shared_ptr<const sensor_msgs::msg::CameraInfo>& camera_info_msg, const std::string& key);

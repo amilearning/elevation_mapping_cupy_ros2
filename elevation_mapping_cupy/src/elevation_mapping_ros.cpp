@@ -162,10 +162,15 @@ ElevationMappingNode::ElevationMappingNode()
             channels_[key].push_back("x");
             channels_[key].push_back("y");
             channels_[key].push_back("z");
+
+            rmw_qos_profile_t qos_profile = rmw_qos_profile_default;
+            auto qos = rclcpp::QoS(rclcpp::QoSInitialization(qos_profile.history, qos_profile.depth), qos_profile);
+
+
             auto callback = [this, key](const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
                   this->pointcloudCallback(msg, key);
               };
-              auto sub = this->create_subscription<sensor_msgs::msg::PointCloud2>(pointcloud_topic, 1, callback);
+              auto sub = this->create_subscription<sensor_msgs::msg::PointCloud2>(pointcloud_topic, qos, callback);
               pointcloudSubs_.push_back(sub);
                 RCLCPP_INFO(this->get_logger(), "Subscribed to PointCloud2 topic: %s", pointcloud_topic.c_str());
           }
@@ -424,86 +429,86 @@ void ElevationMappingNode::inputPointCloud(const sensor_msgs::msg::PointCloud2::
 
 
 
-// void ElevationMappingNode::inputImage(const sensor_msgs::ImageConstPtr& image_msg,
-//                                       const sensor_msgs::CameraInfoConstPtr& camera_info_msg,
-//                                       const std::vector<std::string>& channels) {
-//   // Get image
-//   cv::Mat image = cv_bridge::toCvShare(image_msg, image_msg->encoding)->image;
+void ElevationMappingNode::inputImage(const sensor_msgs::msg::Image::ConstSharedPtr& image_msg,
+                                      const sensor_msgs::msg::CameraInfo::ConstSharedPtr& camera_info_msg,
+                                      const std::vector<std::string>& channels) {            
+  // Get image
+  cv::Mat image = cv_bridge::toCvShare(image_msg, image_msg->encoding)->image;
 
-//   // Change encoding to RGB/RGBA
-//   if (image_msg->encoding == "bgr8") {
-//     cv::cvtColor(image, image, CV_BGR2RGB);
-//   } else if (image_msg->encoding == "bgra8") {
-//     cv::cvtColor(image, image, CV_BGRA2RGBA);
-//   }
+  // Change encoding to RGB/RGBA
+  if (image_msg->encoding == "bgr8") {
+    cv::cvtColor(image, image, CV_BGR2RGB);
+  } else if (image_msg->encoding == "bgra8") {
+    cv::cvtColor(image, image, CV_BGRA2RGBA);
+  }
 
-//   // Extract camera matrix
-//   Eigen::Map<const Eigen::Matrix<double, 3, 3, Eigen::RowMajor>> cameraMatrix(&camera_info_msg->K[0]);
+  // Extract camera matrix
+  Eigen::Map<const Eigen::Matrix<double, 3, 3, Eigen::RowMajor>> cameraMatrix(&camera_info_msg->k[0]);
 
-//   // Extract distortion coefficients
-//   Eigen::VectorXd distortionCoeffs;
-//   if (!camera_info_msg->D.empty()) {
-//     distortionCoeffs = Eigen::Map<const Eigen::VectorXd>(camera_info_msg->D.data(), camera_info_msg->D.size());
-//   } else {
-//     ROS_WARN("Distortion coefficients are empty.");
-//     distortionCoeffs = Eigen::VectorXd::Zero(5);
-//     // return;
-//   }
+  // Extract distortion coefficients
+  Eigen::VectorXd distortionCoeffs;
+  if (!camera_info_msg->d.empty()) {
+    distortionCoeffs = Eigen::Map<const Eigen::VectorXd>(camera_info_msg->d.data(), camera_info_msg->d.size());
+  } else {
+    RCLCPP_WARN(this->get_logger(), "Distortion coefficients are empty.");    
+    distortionCoeffs = Eigen::VectorXd::Zero(5);
+    // return;
+  }
 
-//   // distortion model
-//   std::string distortion_model = camera_info_msg->distortion_model;
+  // distortion model
+  std::string distortion_model = camera_info_msg->distortion_model;
   
-//   // Get pose of sensor in map frame
-//   tf::StampedTransform transformTf;
-//   std::string sensorFrameId = image_msg->header.frame_id;
-//   auto timeStamp = image_msg->header.stamp;
-//   Eigen::Affine3d transformationMapToSensor;
-//   try {
-//     transformListener_.waitForTransform(sensorFrameId, mapFrameId_, timeStamp, ros::Duration(1.0));
-//     transformListener_.lookupTransform(sensorFrameId, mapFrameId_, timeStamp, transformTf);
-//     poseTFToEigen(transformTf, transformationMapToSensor);
-//   } catch (tf::TransformException& ex) {
-//     ROS_ERROR("%s", ex.what());
-//     return;
-//   }
+ // Get pose of sensor in map frame
+  geometry_msgs::msg::TransformStamped transformStamped;
+  std::string sensorFrameId = image_msg->header.frame_id;
+  auto timeStamp = image_msg->header.stamp;
+  Eigen::Isometry3d transformationMapToSensor;
+  try {
+    transformStamped = tfBuffer_->lookupTransform(sensorFrameId, mapFrameId_, tf2::TimePointZero);
+    transformationMapToSensor = tf2::transformToEigen(transformStamped);
+  } catch (tf2::TransformException& ex) {
+    RCLCPP_ERROR(this->get_logger(), "%s", ex.what());
+    return;
+  }
 
-//   // Transform image to vector of Eigen matrices for easy pybind conversion
-//   std::vector<cv::Mat> image_split;
-//   std::vector<ColMatrixXf> multichannel_image;
-//   cv::split(image, image_split);
-//   for (auto img : image_split) {
-//     ColMatrixXf eigen_img;
-//     cv::cv2eigen(img, eigen_img);
-//     multichannel_image.push_back(eigen_img);
-//   }
+  // Transform image to vector of Eigen matrices for easy pybind conversion
+  std::vector<cv::Mat> image_split;
+  std::vector<ColMatrixXf> multichannel_image;
+  cv::split(image, image_split);
+  for (auto img : image_split) {
+    ColMatrixXf eigen_img;
+    cv::cv2eigen(img, eigen_img);
+    multichannel_image.push_back(eigen_img);
+  }
 
-//   // Check if the size of multichannel_image and channels and channel_methods matches. "rgb" counts for 3 layers.
-//   int total_channels = 0;
-//   for (const auto& channel : channels) {
-//     if (channel == "rgb") {
-//       total_channels += 3;
-//     } else {
-//       total_channels += 1;
-//     }
-//   }
-//   if (total_channels != multichannel_image.size()) {
-//     ROS_ERROR("Mismatch in the size of multichannel_image (%d), channels (%d). Please check the input.", multichannel_image.size(), channels.size());
-//     ROS_ERROR_STREAM("Current Channels: " << boost::algorithm::join(channels, ", "));
-//     return;
-//   }
+  // Check if the size of multichannel_image and channels and channel_methods matches. "rgb" counts for 3 layers.
+  int total_channels = 0;
+  for (const auto& channel : channels) {
+    if (channel == "rgb") {
+      total_channels += 3;
+    } else {
+      total_channels += 1;
+    }
+  }
+  if (total_channels != multichannel_image.size()) {
+    RCLCPP_ERROR(this->get_logger(), "Mismatch in the size of multichannel_image (%d), channels (%d). Please check the input.", multichannel_image.size(), channels.size());
+    for (const auto& channel : channels) {
+      RCLCPP_INFO(this->get_logger(), "Channel: %s", channel.c_str());
+    }
+    return;
+  }
 
-//   // Pass image to pipeline
-//   map_.input_image(multichannel_image, channels, transformationMapToSensor.rotation(), transformationMapToSensor.translation(), cameraMatrix, 
-//                    distortionCoeffs, distortion_model, image.rows, image.cols);
-// }
+  // Pass image to pipeline
+  map_->input_image(multichannel_image, channels, transformationMapToSensor.rotation(), transformationMapToSensor.translation(), cameraMatrix, 
+                   distortionCoeffs, distortion_model, image.rows, image.cols);
+}
 
 void ElevationMappingNode::imageCallback(const std::shared_ptr<const sensor_msgs::msg::Image>& image_msg,
                                          const std::shared_ptr<const sensor_msgs::msg::CameraInfo>& camera_info_msg,
                                          const std::string& key) {
-  auto start = this->now();
-  // inputImage(image_msg, camera_info_msg, channels_[key]);
-  RCLCPP_DEBUG(this->get_logger(), "ElevationMap imageCallback processed an image in %f sec.", (this->now() - start).seconds());
-  
+  // auto start = this->now();
+  inputImage(image_msg, camera_info_msg, channels_[key]);
+  // RCLCPP_DEBUG(this->get_logger(), "ElevationMap imageCallback processed an image in %f sec.", (this->now() - start).seconds());  
 }
 
 
@@ -512,10 +517,10 @@ void ElevationMappingNode::imageChannelCallback(const std::shared_ptr<const sens
                                                 const std::shared_ptr<const elevation_map_msgs::msg::ChannelInfo>& channel_info_msg) {
 auto start = this->now();
 // Default channels and fusion methods for image is rgb and image_color
-// std::vector<std::string> channels;
-// channels = channel_info_msg->channels;
-// inputImage(image_msg, camera_info_msg, channels);
-RCLCPP_DEBUG(this->get_logger(), "ElevationMap imageChannelCallback processed an image in %f sec.", (this->now() - start).seconds());
+std::vector<std::string> channels;
+channels = channel_info_msg->channels;
+inputImage(image_msg, camera_info_msg, channels);
+// RCLCPP_INFO(this->get_logger(), "ElevationMap imageChannelCallback processed an image in %f sec.", (this->now() - start).seconds());
 }
 
 
@@ -853,8 +858,7 @@ void ElevationMappingNode::publishNormalAsArrow(const grid_map::GridMap& map) co
     markerArray.markers.push_back(vectorToArrowMarker(start, end, i));
   }
   normalPub_->publish(markerArray);
-  double elapsed_time = (this->now() - startTime).seconds();
-  RCLCPP_INFO(this->get_logger(), "Initializing ElevationMappingNode...");(this->get_logger(), std::chrono::seconds(1), "publish as normal in %f sec.", elapsed_time);      
+  
 }
 
 
