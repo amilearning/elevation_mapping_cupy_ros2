@@ -48,6 +48,7 @@
 #include <pcl/PCLPointCloud2.h>
 #include <pcl/point_types.h>
 #include <pcl_conversions/pcl_conversions.h>
+#include <pcl/filters/voxel_grid.h>
 
 // OpenCV
 #include <opencv2/core.hpp>
@@ -211,6 +212,7 @@ visualization_msgs::msg::Marker vectorToArrowMarker(const Eigen::Vector3d& start
 
     double positionAlpha_;
     double orientationAlpha_;
+    double voxel_filter_size_;
 
     double recordableFps_;
     std::atomic_bool enablePointCloudPublishing_;

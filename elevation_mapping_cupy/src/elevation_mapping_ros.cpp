@@ -70,6 +70,7 @@ ElevationMappingNode::ElevationMappingNode()
   this->get_parameter("enable_drift_corrected_TF_publishing", enableDriftCorrectedTFPublishing_);
   this->get_parameter("use_initializer_at_start", useInitializerAtStart_);
   this->get_parameter("always_clear_with_initializer", alwaysClearWithInitializer_);
+  this->get_parameter("voxel_filter_size", voxel_filter_size_);
 
   RCLCPP_INFO(this->get_logger(), "initialize_frame_id: %s", initialize_frame_id_.empty() ? "[]" : initialize_frame_id_[0].c_str());
   RCLCPP_INFO(this->get_logger(), "initialize_tf_offset: [%f, %f, %f, %f]", initialize_tf_offset_[0], initialize_tf_offset_[1], initialize_tf_offset_[2], initialize_tf_offset_[3]);
@@ -373,9 +374,19 @@ void ElevationMappingNode::pointcloudCallback(const sensor_msgs::msg::PointCloud
 void ElevationMappingNode::inputPointCloud(const sensor_msgs::msg::PointCloud2::SharedPtr cloud,
                                            const std::vector<std::string>& channels) {
     auto start = this->now();
-    auto* pcl_pc = new pcl::PCLPointCloud2;
-    pcl::PCLPointCloud2ConstPtr cloudPtr(pcl_pc);
-    pcl_conversions::toPCL(*cloud, *pcl_pc);
+    // auto* raw_pcl_pc = new pcl::PCLPointCloud2;
+    // pcl::PCLPointCloud2ConstPtr cloudPtr(raw_pcl_pc);    
+    pcl::PCLPointCloud2::Ptr raw_pcl_pc(new pcl::PCLPointCloud2());
+    pcl_conversions::toPCL(*cloud, *raw_pcl_pc);
+    
+    // apply the voxel filtering     
+    pcl::PCLPointCloud2::Ptr pcl_pc (new pcl::PCLPointCloud2());
+    pcl::VoxelGrid<pcl::PCLPointCloud2> voxel_filter;
+    voxel_filter.setInputCloud(raw_pcl_pc);
+    voxel_filter.setLeafSize(voxel_filter_size_,voxel_filter_size_,voxel_filter_size_);
+    voxel_filter.filter(*pcl_pc);   
+    
+    RCLCPP_DEBUG(this->get_logger(), "Voxel grid filtered point cloud from %d points to %d points.", static_cast<int>(cloudPtr->width * cloudPtr->height), static_cast<int>(pcl_pc->width * pcl_pc->height));
 
     // Get channels
     auto fields = cloud->fields;

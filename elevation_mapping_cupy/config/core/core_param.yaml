@@ -1,6 +1,7 @@
 elevation_mapping:
   ros__parameters:
     #### Basic parameters ########
+    voxel_filter_size: 0.05
     enable_normal_arrow_publishing: true
     cell_n: 40000                                    # number of cells in the map.
     data_type: 'float32'                            # data type for the map.
