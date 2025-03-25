@@ -28,7 +28,6 @@ from elevation_mapping_cupy.kernels import error_counting_kernel
 from elevation_mapping_cupy.kernels import average_map_kernel
 from elevation_mapping_cupy.kernels import dilation_filter_kernel
 from elevation_mapping_cupy.kernels import normal_filter_kernel
-from elevation_mapping_cupy.kernels import slope_filter_kernel
 from elevation_mapping_cupy.kernels import polygon_mask_kernel
 from elevation_mapping_cupy.kernels import image_to_map_correspondence_kernel
 
@@ -63,7 +62,6 @@ class ElevationMap:
         self.param = param
         self.data_type = self.param.data_type
         self.resolution = param.resolution
-        self.slop_critical_value = param.slop_critical_value
         self.center = xp.array([0, 0, 0], dtype=self.data_type)
         self.base_rotation = xp.eye(3, dtype=self.data_type)
         self.map_length = param.map_length
@@ -85,9 +83,6 @@ class ElevationMap:
         # buffers
         self.traversability_buffer = xp.full((self.cell_n, self.cell_n), xp.nan)
         self.normal_map = xp.zeros((3, self.cell_n, self.cell_n), dtype=self.data_type)
-
-        self.slop_map = xp.zeros((1, self.cell_n, self.cell_n), dtype=self.data_type)
-
         # Initial variance
         self.initial_variance = param.initial_variance
         self.elevation_map[1] += self.initial_variance
@@ -295,7 +290,6 @@ class ElevationMap:
         )
         self.polygon_mask_kernel = polygon_mask_kernel(self.cell_n, self.cell_n, self.resolution)
         self.normal_filter_kernel = normal_filter_kernel(self.cell_n, self.cell_n, self.resolution)
-        self.slope_filter_kernel = slope_filter_kernel(self.cell_n, self.cell_n, self.slop_critical_value)
 
     def compile_image_kernels(self):
         """Compile kernels related to processing image messages."""
@@ -405,7 +399,6 @@ class ElevationMap:
 
         # calculate normal vectors
         self.update_normal(self.traversability_input)
-        self.update_slop(self.traversability_input)
 
     def clear_overlap_map(self, t):
         """Clear overlapping areas around the map center.
@@ -593,21 +586,6 @@ class ElevationMap:
                 size=(self.cell_n * self.cell_n),
             )
 
-    def update_slop(self, dilated_map):
-        """Clear the normal map and then apply the normal kernel with dilated map as input.
-
-        Args:
-            dilated_map (cupy._core.core.ndarray):
-        """
-        with self.map_lock:
-            self.slop_map *= 0.0
-            self.slope_filter_kernel(
-                self.normal_map[2,:,:],
-                self.elevation_map[2],
-                self.slop_map,
-                size=(self.cell_n * self.cell_n),
-            )
-
     def process_map_for_publish(self, input_map, fill_nan=False, add_z=False, xp=cp):
         """Process the input_map according to the fill_nan and add_z flags.
 
@@ -785,8 +763,6 @@ class ElevationMap:
                 m = self.normal_map.copy()[1, 1:-1, 1:-1]
             elif name == "normal_z":
                 m = self.normal_map.copy()[2, 1:-1, 1:-1]
-            elif name == "slop":
-                m = self.slop_map.copy()[:, 1:-1, 1:-1]
             elif name in self.semantic_map.layer_names:
                 m = self.semantic_map.get_map_with_name(name)
             elif name in self.plugin_manager.layer_names:
@@ -814,15 +790,6 @@ class ElevationMap:
             stream = None
         self.copy_to_cpu(m, data, stream=stream)
 
-    def get_slop_maps(self):
-        maps = self.slop_map.copy()
-        maps = maps[:, 1:-1, 1:-1]
-        maps = xp.flip(maps, 1)
-        maps = xp.flip(maps, 2)
-        maps = xp.asnumpy(maps)
-        return maps
-
-
     def get_normal_maps(self):
         """Get the normal maps.
 
@@ -838,19 +805,6 @@ class ElevationMap:
         maps = xp.flip(maps, 2)
         maps = xp.asnumpy(maps)
         return maps
-
-    def get_slop_ref(self, slop_data):
-        """Get the normal maps as reference.
-
-        Args:
-            normal_slop_datax_data:
-            normal_y_data:
-            normal_z_data:
-        """
-        maps = self.get_slop_maps()
-        self.stream = cp.cuda.Stream(non_blocking=True)
-        slop_data[...] = xp.asnumpy(maps[0], stream=self.stream)
-        
 
     def get_normal_ref(self, normal_x_data, normal_y_data, normal_z_data):
         """Get the normal maps as reference.

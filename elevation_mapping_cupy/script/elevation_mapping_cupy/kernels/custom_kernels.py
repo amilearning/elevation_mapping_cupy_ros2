@@ -449,6 +449,49 @@ def dilation_filter_kernel(width, height, dilation_size):
     return dilation_filter_kernel
 
 
+
+def slope_filter_kernel(width, height, critical_value):
+    slop_filter_kernel = cp.ElementwiseKernel(
+        in_params="raw U normal_z, raw U mask",
+        out_params="raw U newmap",
+        preamble=string.Template(
+            """
+            __device__ int get_map_idx(int idx, int layer_n) {
+                const int layer = ${width} * ${height};
+                return layer * layer_n + idx;
+            }
+
+            __device__ bool is_valid(float v) {
+                return v > 0.5;
+            }
+
+            __device__ float critical_value() {
+                return ${critical_value};
+            }
+            """
+        ).substitute(width=width, height=height, critical_value=critical_value),
+        operation="""
+        U nz = normal_z[get_map_idx(i, 0)];
+        U valid = mask[get_map_idx(i, 0)];
+
+        if (!is_valid(valid)) {
+            newmap[get_map_idx(i, 0)] = 0.0;
+            return;
+        }
+
+        float slope = acos(nz);
+        if (slope < critical_value()) {
+            newmap[get_map_idx(i, 0)] = 1- (1.0 - slope / critical_value());
+        } else {
+            newmap[get_map_idx(i, 0)] = 1.0;
+        }
+        """,
+        name="slope_filter_kernel"
+    )
+
+    return slop_filter_kernel
+
+
 def normal_filter_kernel(width, height, resolution):
     normal_filter_kernel = cp.ElementwiseKernel(
         in_params="raw U map, raw U mask",

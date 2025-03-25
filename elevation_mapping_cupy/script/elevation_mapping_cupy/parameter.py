@@ -134,6 +134,7 @@ class Parameter(Serializable):
                      (Default: ``None``)
         
     """
+    slop_critical_value: float = 0.7854
     resolution: float = 0.04  # resolution in m.
     subscriber_cfg: dict = field(
         default_factory=lambda: {
