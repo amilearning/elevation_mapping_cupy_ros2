@@ -285,9 +285,17 @@ void ElevationMappingWrapper::get_grid_map(grid_map::GridMap& gridMap, const std
     gridMap.add("normal_y", normal_y);
     gridMap.add("normal_z", normal_z);
 
-    RowMatrixXf slop_(map_n_, map_n_);
-    map_.attr("get_slop_ref")(Eigen::Ref<RowMatrixXf>(slop_));
-    gridMap.add("slop", slop_);
+    // RowMatrixXf slop_(map_n_, map_n_);
+    // map_.attr("get_slop_ref")(Eigen::Ref<RowMatrixXf>(slop_));
+    // gridMap.add("slop", slop_);
+
+    // RowMatrixXf step_(map_n_, map_n_);
+    // map_.attr("get_step_ref")(Eigen::Ref<RowMatrixXf>(step_));
+    // gridMap.add("step", step_);
+
+    RowMatrixXf geo_trav_(map_n_, map_n_);
+    map_.attr("get_geo_trav_ref")(Eigen::Ref<RowMatrixXf>(geo_trav_));
+    gridMap.add("geo_trav", geo_trav_);
 
   }
   gridMap.setBasicLayers(basicLayerNames);

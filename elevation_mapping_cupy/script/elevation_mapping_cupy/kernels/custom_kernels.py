@@ -450,6 +450,84 @@ def dilation_filter_kernel(width, height, dilation_size):
 
 
 
+def combine_traversability_kernel(weight_slope, weight_step):
+    return cp.ElementwiseKernel(
+        in_params="raw U slope_map, raw U step_map",
+        out_params="raw U final_map",
+        preamble=string.Template("""
+            __device__ float weight_slope() {
+                return ${weight_slope};
+            }
+            __device__ float weight_step() {
+                return ${weight_step};
+            }
+        """).substitute(weight_slope=weight_slope, weight_step=weight_step),
+        operation="""
+        final_map[i] = weight_slope() * slope_map[i] + weight_step() * step_map[i];
+        """,
+        name="combine_traversability_kernel"
+    )
+
+def step_filter_kernel(width, height, step_radius, critical_value):
+    return cp.ElementwiseKernel(
+        in_params="raw U elevation, raw U mask",
+        out_params="raw U newmap",
+        preamble=string.Template("""
+            __device__ int get_idx(int x, int y) {
+                return y * ${width} + x;
+            }
+
+            __device__ bool is_valid(float v) {
+                return v > 0.5;
+            }
+
+            __device__ bool in_bounds(int x, int y) {
+                return x >= 0 && x < ${width} && y >= 0 && y < ${height};
+            }
+
+            __device__ float critical_value() {
+                return ${critical_value};
+            }
+        """).substitute(width=width, height=height, critical_value=critical_value),
+        operation=string.Template("""
+            int x = i % ${width};
+            int y = i / ${width};
+
+            if (!is_valid(mask[i])) {
+                newmap[i] = 0.0;
+                return;
+            }
+
+            float h_center = elevation[i];
+            float h_max = h_center;
+            float h_min = h_center;
+
+            for (int dy = -${radius}; dy <= ${radius}; ++dy) {
+                for (int dx = -${radius}; dx <= ${radius}; ++dx) {
+                    int nx = x + dx;
+                    int ny = y + dy;
+                    if (!in_bounds(nx, ny)) continue;
+
+                    int ni = get_idx(nx, ny);
+                    if (!is_valid(mask[ni])) continue;
+
+                    float h = elevation[ni];
+                    if (h > h_max) h_max = h;
+                    if (h < h_min) h_min = h;
+                }
+            }
+
+            float step_height = h_max - h_min;
+
+            if (step_height < critical_value()) {
+                newmap[i] = 1-(1.0 - step_height / critical_value());
+            } else {
+                newmap[i] = 1.0;
+            }
+        """).substitute(width=width, radius=step_radius),
+        name="step_filter_kernel"
+    )
+
 def slope_filter_kernel(width, height, critical_value):
     slop_filter_kernel = cp.ElementwiseKernel(
         in_params="raw U normal_z, raw U mask",

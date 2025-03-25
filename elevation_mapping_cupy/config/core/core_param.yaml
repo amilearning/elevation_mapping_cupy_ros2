@@ -144,7 +144,7 @@ elevation_mapping:
     publishers:
       elevation_map_raw:                
         # layers: ['us_valid','elevation', 'variance','rgb', 'normal_x', 'normal_y', 'normal_z', 'feat_0','feat_1','feat_2','feat_3','feat_4','feat_5','feat_6','feat_7','feat_8','feat_9']        
-        layers: ['is_valid','elevation', 'slop', 'rgb', 'normal_x', 'normal_y', 'normal_z', 'feat_0','feat_1','feat_2']
+        layers: ['is_valid','elevation', 'geo_trav',  'rgb', 'normal_x', 'normal_y', 'normal_z', 'feat_0','feat_1','feat_2']
         basic_layers: ['elevation']
         fps: 5.0
       # elevation_map_recordable:

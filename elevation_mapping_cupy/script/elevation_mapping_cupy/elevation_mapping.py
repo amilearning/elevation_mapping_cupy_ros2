@@ -28,7 +28,7 @@ from elevation_mapping_cupy.kernels import error_counting_kernel
 from elevation_mapping_cupy.kernels import average_map_kernel
 from elevation_mapping_cupy.kernels import dilation_filter_kernel
 from elevation_mapping_cupy.kernels import normal_filter_kernel
-from elevation_mapping_cupy.kernels import slope_filter_kernel
+from elevation_mapping_cupy.kernels import slope_filter_kernel, step_filter_kernel, combine_traversability_kernel
 from elevation_mapping_cupy.kernels import polygon_mask_kernel
 from elevation_mapping_cupy.kernels import image_to_map_correspondence_kernel
 
@@ -64,6 +64,11 @@ class ElevationMap:
         self.data_type = self.param.data_type
         self.resolution = param.resolution
         self.slop_critical_value = param.slop_critical_value
+        self.step_radius = param.step_radius
+        self.geo_trav_cost_weight_slope = param.geo_trav_cost_weight_slope
+        self.geo_trav_cost_weight_step = param.geo_trav_cost_weight_step
+
+        self.step_critical_value = param.step_critical_value
         self.center = xp.array([0, 0, 0], dtype=self.data_type)
         self.base_rotation = xp.eye(3, dtype=self.data_type)
         self.map_length = param.map_length
@@ -87,6 +92,8 @@ class ElevationMap:
         self.normal_map = xp.zeros((3, self.cell_n, self.cell_n), dtype=self.data_type)
 
         self.slop_map = xp.zeros((1, self.cell_n, self.cell_n), dtype=self.data_type)
+        self.step_map = xp.zeros((1, self.cell_n, self.cell_n), dtype=self.data_type)
+        self.geo_trav_map = xp.zeros((1, self.cell_n, self.cell_n), dtype=self.data_type)
 
         # Initial variance
         self.initial_variance = param.initial_variance
@@ -296,6 +303,9 @@ class ElevationMap:
         self.polygon_mask_kernel = polygon_mask_kernel(self.cell_n, self.cell_n, self.resolution)
         self.normal_filter_kernel = normal_filter_kernel(self.cell_n, self.cell_n, self.resolution)
         self.slope_filter_kernel = slope_filter_kernel(self.cell_n, self.cell_n, self.slop_critical_value)
+        self.step_filter_kernel = step_filter_kernel(self.cell_n, self.cell_n,self.step_radius, self.step_critical_value)
+        self.combine_traversability_kernel = combine_traversability_kernel( self.geo_trav_cost_weight_slope, self.geo_trav_cost_weight_step)
+
 
     def compile_image_kernels(self):
         """Compile kernels related to processing image messages."""
@@ -405,7 +415,9 @@ class ElevationMap:
 
         # calculate normal vectors
         self.update_normal(self.traversability_input)
-        self.update_slop(self.traversability_input)
+        
+        
+        self.update_geo_trav_cost()
 
     def clear_overlap_map(self, t):
         """Clear overlapping areas around the map center.
@@ -593,11 +605,41 @@ class ElevationMap:
                 size=(self.cell_n * self.cell_n),
             )
 
-    def update_slop(self, dilated_map):
-        """Clear the normal map and then apply the normal kernel with dilated map as input.
+    def update_geo_trav_cost(self):
+        self.update_slop()
+        self.update_step(self.traversability_input)
+        with self.map_lock:
+            self.geo_trav_map *= 0.0
+            self.combine_traversability_kernel(
+                self.slop_map,
+                self.step_map,
+                self.geo_trav_map,
+                size=(self.cell_n * self.cell_n),
+            )
+        
+        
+        
+        
 
+    def update_step(self,dilated_map):
+        """Clear the step map and then apply the step kernel with dilated map as input.
         Args:
             dilated_map (cupy._core.core.ndarray):
+        """
+        with self.map_lock:
+            self.step_map *= 0.0
+            self.step_filter_kernel(
+                dilated_map,
+                self.elevation_map[2],
+                self.step_map,
+                size=(self.cell_n * self.cell_n),
+            )
+
+
+    def update_slop(self):
+        """Clear the slop map and then apply the slop kernel with dilated map as input.
+        Args:
+            normal_z map (cupy._core.core.ndarray):
         """
         with self.map_lock:
             self.slop_map *= 0.0
@@ -787,6 +829,10 @@ class ElevationMap:
                 m = self.normal_map.copy()[2, 1:-1, 1:-1]
             elif name == "slop":
                 m = self.slop_map.copy()[:, 1:-1, 1:-1]
+            elif name == "step":
+                m = self.step_map.copy()[:, 1:-1, 1:-1]
+            elif name == "geo_trav":
+                m = self.geo_trav_map.copy()[:, 1:-1, 1:-1]
             elif name in self.semantic_map.layer_names:
                 m = self.semantic_map.get_map_with_name(name)
             elif name in self.plugin_manager.layer_names:
@@ -814,6 +860,25 @@ class ElevationMap:
             stream = None
         self.copy_to_cpu(m, data, stream=stream)
 
+    
+    def get_geo_trav_maps(self):
+        maps = self.geo_trav_map.copy()
+        maps = maps[:, 1:-1, 1:-1]
+        maps = xp.flip(maps, 1)
+        maps = xp.flip(maps, 2)
+        maps = xp.asnumpy(maps)
+        return maps
+    
+
+    def get_step_maps(self):
+        maps = self.step_map.copy()
+        maps = maps[:, 1:-1, 1:-1]
+        maps = xp.flip(maps, 1)
+        maps = xp.flip(maps, 2)
+        maps = xp.asnumpy(maps)
+        return maps
+
+     
     def get_slop_maps(self):
         maps = self.slop_map.copy()
         maps = maps[:, 1:-1, 1:-1]
@@ -839,17 +904,36 @@ class ElevationMap:
         maps = xp.asnumpy(maps)
         return maps
 
+
+    def get_geo_trav_ref(self, geo_trav_data):
+        """Get the geo_trav cost maps as reference.
+
+        Args:
+            geo_trav_data:
+        """
+        maps = self.get_geo_trav_maps()
+        self.stream = cp.cuda.Stream(non_blocking=True)
+        geo_trav_data[...] = xp.asnumpy(maps[0], stream=self.stream)
+
     def get_slop_ref(self, slop_data):
-        """Get the normal maps as reference.
+        """Get the slop maps as reference.
 
         Args:
             normal_slop_datax_data:
-            normal_y_data:
-            normal_z_data:
         """
         maps = self.get_slop_maps()
         self.stream = cp.cuda.Stream(non_blocking=True)
         slop_data[...] = xp.asnumpy(maps[0], stream=self.stream)
+
+    def get_step_ref(self, step_data):
+        """Get the step maps as reference.
+
+        Args:
+            normal_slop_datax_data:
+        """
+        maps = self.get_step_maps()
+        self.stream = cp.cuda.Stream(non_blocking=True)
+        step_data[...] = xp.asnumpy(maps[0], stream=self.stream)
         
 
     def get_normal_ref(self, normal_x_data, normal_y_data, normal_z_data):
