@@ -110,11 +110,11 @@ elevation_mapping:
       pointcloud1:
         # topic_name: '/ouster/points'      
         # topic_name: '/left/zed_node_1/point_cloud/cloud_registered'            
-        topic_name: '/left/zed_node/point_cloud/cloud_registered'            
+        topic_name: '/front/zed_node/point_cloud/cloud_registered'            
         data_type: 'pointcloud'
       image1:
         topic_name: '/feat_processing_node/semantic_feat'
-        info_name: '/feat_processing_node/camera/camera/color/camera_info_resized'        
+        info_name: '/feat_processing_node/front/zed_node/rgb/camera_info_resized'                
         channel_name: '/feat_processing_node/feat_channel_info'        
         data_type: 'image'
       # image2:
@@ -144,7 +144,7 @@ elevation_mapping:
     publishers:
       elevation_map_raw:                
         # layers: ['us_valid','elevation', 'variance','rgb', 'normal_x', 'normal_y', 'normal_z', 'feat_0','feat_1','feat_2','feat_3','feat_4','feat_5','feat_6','feat_7','feat_8','feat_9']        
-        layers: ['is_valid','elevation', 'variance','rgb', 'normal_x', 'normal_y', 'normal_z', 'feat_0','feat_1','feat_2']
+        layers: ['is_valid','elevation', 'rgb', 'normal_x', 'normal_y', 'normal_z', 'feat_0','feat_1','feat_2']
         basic_layers: ['elevation']
         fps: 5.0
       # elevation_map_recordable:
