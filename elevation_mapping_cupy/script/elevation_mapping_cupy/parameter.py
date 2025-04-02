@@ -136,8 +136,8 @@ class Parameter(Serializable):
     """
     slop_critical_value: float = 0.7854
     step_radius : float = 1.01
-    step_critical_value : float = 0.5
-    geo_trav_cost_weight_slope : float = 0.5
+    step_critical_value : float = 0.3
+    geo_trav_cost_weight_slope : float = 0.0
     geo_trav_cost_weight_step : float = 0.5
 
     resolution: float = 0.04  # resolution in m.

@@ -606,7 +606,7 @@ class ElevationMap:
             )
 
     def update_geo_trav_cost(self):
-        self.update_slop()
+        # self.update_slop()
         self.update_step(self.traversability_input)
         with self.map_lock:
             self.geo_trav_map *= 0.0
